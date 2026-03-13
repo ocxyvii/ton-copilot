@@ -1,7 +1,7 @@
 {
-  "url": "http://localhost:8080",
+  "url": "https://ton-copilot.onrender.com",
   "name": "TON Copilot",
   "iconUrl": "https://ton.org/download/ton_symbol.png",
-  "termsOfUseUrl": "http://localhost:8080",
-  "privacyPolicyUrl": "http://localhost:8080"
+  "termsOfUseUrl": "https://ton-copilot.onrender.com/terms",
+  "privacyPolicyUrl": "https://ton-copilot.onrender.com/privacy"
 }
