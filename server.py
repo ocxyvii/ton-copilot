@@ -30,7 +30,14 @@ def make_connector():
     ssl_context = ssl.create_default_context(cafile=certifi.where())
     return aiohttp.TCPConnector(ssl=ssl_context)
 
+# Cache prices for 60 seconds to avoid rate limits
+_price_cache = {"data": {}, "ts": 0}
+
 async def fetch_prices():
+    import time
+    now = time.time()
+    if now - _price_cache["ts"] < 60 and _price_cache["data"]:
+        return _price_cache["data"]
     try:
         ids = ",".join(SUPPORTED_COINS.values())
         connector = make_connector()
@@ -44,11 +51,18 @@ async def fetch_prices():
                 "include_24hr_vol": "true",
             }
             async with session.get(f"{COINGECKO_API}/simple/price", params=params,
-                                   timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                return await resp.json()
+                                   timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    _price_cache["data"] = data
+                    _price_cache["ts"] = now
+                    return data
+                else:
+                    print(f"CoinGecko status: {resp.status}")
+                    return _price_cache["data"]
     except Exception as e:
         print(f"Error fetching prices: {e}")
-        return {}
+        return _price_cache["data"]
 
 async def prices_handler(request):
     data = await fetch_prices()
@@ -84,8 +98,32 @@ async def chat_handler(request):
         if not messages:
             return web.json_response({"reply": "No message received."})
 
+        # Fetch live prices to inject into system prompt
+        price_context = ""
+        try:
+            prices = await fetch_prices()
+            if prices:
+                order = ["BTC", "ETH", "SOL", "TON", "NOT", "DOGS", "BNB", "DOGE", "ADA", "TRX"]
+                lines = []
+                for sym in order:
+                    cg_id = SUPPORTED_COINS.get(sym)
+                    if cg_id and cg_id in prices:
+                        p = prices[cg_id].get("usd", 0)
+                        c = prices[cg_id].get("usd_24h_change", 0)
+                        lines.append(f"{sym}: ${p:,.4f} ({c:+.2f}% 24h)")
+                price_context = "\n\nCURRENT LIVE PRICES (fetched right now):\n" + "\n".join(lines)
+        except Exception as e:
+            print(f"Price fetch for chat: {e}")
+
         groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
-        system = {"role": "system", "content": "You are TON Copilot, an AI crypto assistant specializing in the TON blockchain. Help users with TON, crypto prices, DeFi, wallets, staking, swapping, and general crypto questions. Be concise, friendly, and accurate. Never ask for private keys or seed phrases."}
+        system_content = (
+            "You are TON Copilot, an AI crypto assistant specializing in the TON blockchain. "
+            "Help users with crypto prices, DeFi, wallets, staking, swapping, and blockchain questions. "
+            "Be concise, friendly, and accurate. Never ask for private keys or seed phrases. "
+            "When asked about prices, ALWAYS use the live prices provided below — never use outdated training data."
+            + price_context
+        )
+        system = {"role": "system", "content": system_content}
 
         response = groq_client.chat.completions.create(
             model="llama-3.3-70b-versatile",
