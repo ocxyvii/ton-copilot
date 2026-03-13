@@ -328,6 +328,17 @@ input:focus, select:focus { border-color:var(--accent); }
 .bnav-ic { font-size:20px; }
 .bnav-item.active { color:var(--accent); }
 .bnav-item:active { transform:scale(0.88); }
+.quick-btn {
+  padding:6px 12px; border-radius:8px; background:var(--card2);
+  border:1px solid var(--border); color:var(--sub);
+  font-family:'Cabinet Grotesk',sans-serif; font-size:11px; font-weight:700;
+  cursor:pointer; transition:all 0.15s; white-space:nowrap;
+}
+.quick-btn:active { background:var(--border); color:var(--text); }
+.chat-bubble { padding:11px 14px; border-radius:14px; font-size:13px; line-height:1.6; max-width:85%; }
+.chat-bubble.user { background:linear-gradient(135deg,var(--accent),var(--accent2)); color:#fff; align-self:flex-end; border-bottom-right-radius:4px; }
+.chat-bubble.ai { background:var(--card); border:1px solid var(--border); color:var(--text); align-self:flex-start; border-bottom-left-radius:4px; }
+.chat-bubble.thinking { color:var(--sub); font-style:italic; }
 </style>
 </head>
 <body>
@@ -510,6 +521,37 @@ input:focus, select:focus { border-color:var(--accent); }
     <div style="height:20px"></div>
   </div>
 
+  <!-- AI ASSISTANT PAGE -->
+  <div class="page" id="page-ai">
+    <div style="height:14px"></div>
+    <div style="background:linear-gradient(135deg,rgba(79,110,247,0.15),rgba(124,58,237,0.1));border:1px solid rgba(79,110,247,0.25);border-radius:18px;padding:18px;margin-bottom:14px;text-align:center">
+      <div style="font-size:36px;margin-bottom:8px">🤖</div>
+      <div style="font-size:17px;font-weight:900;margin-bottom:6px">TON Copilot AI</div>
+      <div style="font-size:13px;color:var(--sub);line-height:1.6">Powered by Llama 3.3 70B · Ask anything about TON, crypto, DeFi, or your portfolio</div>
+    </div>
+
+    <div id="chatMessages" style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px;min-height:200px"></div>
+
+    <div style="position:sticky;bottom:80px;background:var(--bg);padding:8px 0">
+      <div style="display:flex;gap:8px;align-items:flex-end">
+        <div style="flex:1;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:10px 14px">
+          <input type="text" id="chatInput" placeholder="Ask anything... e.g. What is TON staking?" 
+            style="background:transparent;border:none;width:100%;font-size:14px;color:var(--text);font-family:'Cabinet Grotesk',sans-serif;font-weight:600"
+            onkeydown="if(event.key==='Enter')sendChat()">
+        </div>
+        <button onclick="sendChat()" style="width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0">➤</button>
+      </div>
+      <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+        <button onclick="quickAsk('What is the best way to stake TON?')" class="quick-btn">Stake TON</button>
+        <button onclick="quickAsk('What are the best TON wallets?')" class="quick-btn">Best wallets</button>
+        <button onclick="quickAsk('Explain DeFi on TON')" class="quick-btn">DeFi on TON</button>
+        <button onclick="quickAsk('How do I send TON?')" class="quick-btn">Send TON</button>
+      </div>
+    </div>
+    <div style="height:20px"></div>
+  </div>
+
+
 </div>
 
 <div class="bottom-nav">
@@ -517,6 +559,7 @@ input:focus, select:focus { border-color:var(--accent); }
   <div class="bnav-item" id="nav-market" onclick="switchTab('market')"><div class="bnav-ic">💹</div>Market</div>
   <div class="bnav-item" id="nav-portfolio" onclick="switchTab('portfolio')"><div class="bnav-ic">📊</div>Portfolio</div>
   <div class="bnav-item" id="nav-send" onclick="switchTab('send')"><div class="bnav-ic">📤</div>Send</div>
+  <div class="bnav-item" id="nav-ai" onclick="switchTab('ai')"><div class="bnav-ic">🤖</div>AI</div>
   <div class="bnav-item" id="nav-more" onclick="switchTab('more')"><div class="bnav-ic">⚡</div>More</div>
 </div>
 
@@ -813,6 +856,7 @@ function switchTab(tab) {
   if (tab==='market') renderMarket();
   if (tab==='portfolio') renderPortfolio();
   if (tab==='more') renderAlerts();
+  if (tab==='ai') document.getElementById('chatInput').focus();
 }
 
 // ── Toast ────────────────────────────────────────────────────────────────
@@ -820,6 +864,55 @@ function showToast(msg,ms=2500) {
   const t=document.getElementById('toast');
   t.textContent=msg; t.classList.add('show');
   setTimeout(()=>t.classList.remove('show'),ms);
+}
+
+
+// ── AI Chat ─────────────────────────────────────────────────────────────
+let chatHistory = [];
+
+function addBubble(text, role) {
+  const el = document.getElementById('chatMessages');
+  const div = document.createElement('div');
+  div.className = `chat-bubble ${role}`;
+  div.textContent = text;
+  el.appendChild(div);
+  el.scrollTop = el.scrollHeight;
+  return div;
+}
+
+function quickAsk(q) {
+  document.getElementById('chatInput').value = q;
+  sendChat();
+}
+
+async function sendChat() {
+  const input = document.getElementById('chatInput');
+  const msg = input.value.trim();
+  if (!msg) return;
+  input.value = '';
+
+  addBubble(msg, 'user');
+  chatHistory.push({ role: 'user', content: msg });
+
+  const thinking = addBubble('Thinking...', 'ai thinking');
+  if (tg) tg.HapticFeedback?.impactOccurred('light');
+
+  try {
+    const res = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: chatHistory })
+    });
+    const data = await res.json();
+    const reply = data.reply || 'Sorry, I could not answer that.';
+    thinking.className = 'chat-bubble ai';
+    thinking.textContent = reply;
+    chatHistory.push({ role: 'assistant', content: reply });
+    if (tg) tg.HapticFeedback?.notificationOccurred('success');
+  } catch(e) {
+    thinking.textContent = '⚠️ Could not reach AI. Check your connection.';
+  }
+  document.getElementById('chatMessages').scrollTop = 99999;
 }
 
 // ── Init ─────────────────────────────────────────────────────────────────

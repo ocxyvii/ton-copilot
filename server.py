@@ -76,6 +76,29 @@ async def prices_handler(request):
 async def health_handler(request):
     return web.json_response({"status": "ok", "service": "TON Copilot API"})
 
+async def chat_handler(request):
+    try:
+        from groq import Groq
+        body = await request.json()
+        messages = body.get("messages", [])
+        if not messages:
+            return web.json_response({"reply": "No message received."})
+
+        groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+        system = {"role": "system", "content": "You are TON Copilot, an AI crypto assistant specializing in the TON blockchain. Help users with TON, crypto prices, DeFi, wallets, staking, swapping, and general crypto questions. Be concise, friendly, and accurate. Never ask for private keys or seed phrases."}
+
+        response = groq_client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[system] + messages[-10:],
+            max_tokens=512,
+            temperature=0.7,
+        )
+        reply = response.choices[0].message.content
+        return web.json_response({"reply": reply})
+    except Exception as e:
+        print(f"Chat error: {e}")
+        return web.json_response({"reply": "⚠️ AI is unavailable right now. Try again!"}, status=500)
+
 async def index_handler(request):
     return web.FileResponse("./webapp/index.html")
 
@@ -96,6 +119,9 @@ def create_app():
 
     health_resource = cors.add(app.router.add_resource("/health"))
     cors.add(health_resource.add_route("GET", health_handler))
+
+    chat_resource = cors.add(app.router.add_resource("/api/chat"))
+    cors.add(chat_resource.add_route("POST", chat_handler))
 
     # Serve index.html at root
     app.router.add_get("/", index_handler)
