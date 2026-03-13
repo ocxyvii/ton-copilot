@@ -1,0 +1,830 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>TON Copilot</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="https://unpkg.com/@tonconnect/ui@latest/dist/tonconnect-ui.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Cabinet+Grotesk:wght@400;500;700;800;900&display=swap');
+
+:root {
+  --bg: #080810;
+  --card: #0f0f1a;
+  --card2: #161625;
+  --border: #1e1e35;
+  --accent: #4F6EF7;
+  --accent2: #7C3AED;
+  --glow: rgba(79,110,247,0.15);
+  --green: #00d68f;
+  --red: #ff4d6d;
+  --yellow: #ffd166;
+  --text: #eeeeff;
+  --sub: #8888bb;
+  --ton: #0098EA;
+  --ton-glow: rgba(0,152,234,0.2);
+}
+
+* { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+html, body { height:100%; overflow:hidden; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Cabinet Grotesk', sans-serif;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-shell {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 80px;
+}
+
+/* ── Top bar ── */
+.topbar {
+  position: sticky; top: 0; z-index: 50;
+  background: rgba(8,8,16,0.94);
+  backdrop-filter: blur(16px);
+  padding: 14px 18px 10px;
+  display: flex; align-items: center; justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+}
+
+.brand { display:flex; align-items:center; gap:9px; }
+.brand-gem {
+  width:34px; height:34px;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  border-radius:10px; display:flex; align-items:center; justify-content:center;
+  font-size:17px; box-shadow: 0 0 16px var(--glow);
+}
+.brand-name { font-size:17px; font-weight:900; letter-spacing:-0.5px; }
+.brand-name em { color:var(--accent); font-style:normal; }
+
+.wallet-btn {
+  display: flex; align-items: center; gap: 7px;
+  padding: 8px 14px; border-radius: 12px;
+  font-family: 'Cabinet Grotesk', sans-serif; font-size: 13px; font-weight: 700;
+  cursor: pointer; transition: all 0.2s; border: none; letter-spacing: -0.2px;
+}
+.wallet-btn.disconnected {
+  background: linear-gradient(135deg, var(--ton), #0077bb);
+  color: #fff; box-shadow: 0 0 20px var(--ton-glow);
+}
+.wallet-btn.connected {
+  background: var(--card2); border: 1px solid var(--border); color: var(--text);
+}
+.wallet-btn:active { transform:scale(0.95); }
+.wallet-dot { width:7px; height:7px; border-radius:50%; background:var(--green); }
+
+/* ── Pages ── */
+.page { display:none; padding:16px 16px 0; }
+.page.active { display:block; animation: slideUp 0.22s ease; }
+@keyframes slideUp { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+
+.slabel {
+  font-size:10px; font-weight:800; letter-spacing:2px;
+  color:var(--sub); text-transform:uppercase; margin-bottom:10px;
+}
+
+/* ── Wallet page ── */
+.wallet-banner {
+  background: linear-gradient(135deg, rgba(0,152,234,0.12), rgba(79,110,247,0.1));
+  border: 1px solid rgba(0,152,234,0.25);
+  border-radius:18px; padding:18px; margin-bottom:14px;
+  position:relative; overflow:hidden;
+}
+.wallet-banner::after {
+  content:'💎'; position:absolute; right:14px; top:14px;
+  font-size:40px; opacity:0.12;
+}
+.wb-label { font-size:11px; font-weight:700; color:var(--ton); letter-spacing:1px; text-transform:uppercase; margin-bottom:4px; }
+.wb-address { font-family:'DM Mono',monospace; font-size:12px; color:var(--sub); margin-bottom:12px; word-break:break-all; }
+.wb-balance { font-size:32px; font-weight:900; letter-spacing:-1px; }
+.wb-usd { font-size:14px; color:var(--sub); margin-top:3px; }
+.wb-actions { display:flex; gap:8px; margin-top:14px; flex-wrap:wrap; }
+.wb-btn {
+  flex:1; min-width:calc(50% - 4px); padding:10px;
+  border-radius:12px; background:var(--card2); border:1px solid var(--border);
+  color:var(--text); font-family:'Cabinet Grotesk',sans-serif;
+  font-size:13px; font-weight:700; cursor:pointer; transition:all 0.15s;
+  display:flex; align-items:center; justify-content:center; gap:6px;
+}
+.wb-btn:active { transform:scale(0.96); background:var(--border); }
+
+.connect-prompt {
+  text-align:center; padding:28px 20px;
+  background:var(--card); border:1px solid var(--border);
+  border-radius:18px; margin-bottom:14px;
+}
+.connect-prompt .ico { font-size:48px; margin-bottom:12px; }
+.connect-prompt h3 { font-size:18px; font-weight:900; margin-bottom:8px; }
+.connect-prompt p { font-size:13px; color:var(--sub); line-height:1.7; margin-bottom:18px; }
+.big-connect-btn {
+  width:100%; padding:15px;
+  background: linear-gradient(135deg, var(--ton), #0077bb);
+  border:none; border-radius:14px; color:#fff;
+  font-family:'Cabinet Grotesk',sans-serif; font-size:15px; font-weight:800;
+  cursor:pointer; box-shadow: 0 0 24px var(--ton-glow); transition:all 0.2s;
+}
+.big-connect-btn:active { transform:scale(0.97); }
+
+.feature-card {
+  background:var(--card); border:1px solid var(--border);
+  border-radius:14px; padding:14px 16px; margin-bottom:8px;
+  display:flex; align-items:center; gap:12px;
+}
+.feature-ic { font-size:24px; flex-shrink:0; }
+.feature-title { font-size:14px; font-weight:800; }
+.feature-sub { font-size:12px; color:var(--sub); margin-top:2px; }
+
+/* ── Market ── */
+.coin-stats { display:flex; gap:6px; margin-bottom:14px; }
+.cstat {
+  flex:1; background:var(--card); border:1px solid var(--border);
+  border-radius:12px; padding:11px 8px; text-align:center;
+}
+.cstat-val { font-family:'DM Mono',monospace; font-size:13px; font-weight:500; }
+.cstat-lbl { font-size:9px; color:var(--sub); margin-top:3px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; }
+
+.coins-grid { display:flex; flex-direction:column; gap:7px; }
+.coin-row {
+  background:var(--card); border:1px solid var(--border);
+  border-radius:14px; padding:13px 14px;
+  display:flex; align-items:center; gap:12px;
+  cursor:pointer; transition:all 0.15s; position:relative; overflow:hidden;
+}
+.coin-row::before {
+  content:''; position:absolute; left:0; top:0; bottom:0;
+  width:3px; border-radius:2px 0 0 2px;
+}
+.coin-row.up::before { background:var(--green); }
+.coin-row.down::before { background:var(--red); }
+.coin-row:active { transform:scale(0.985); background:var(--card2); }
+.coin-em {
+  width:38px; height:38px; border-radius:12px;
+  background:var(--card2); border:1px solid var(--border);
+  display:flex; align-items:center; justify-content:center; font-size:19px; flex-shrink:0;
+}
+.coin-mid { flex:1; min-width:0; }
+.coin-sym { font-size:15px; font-weight:800; letter-spacing:-0.3px; }
+.coin-sub { font-size:11px; color:var(--sub); margin-top:1px; }
+.coin-vals { text-align:right; flex-shrink:0; }
+.coin-price { font-family:'DM Mono',monospace; font-size:14px; font-weight:500; }
+.coin-chg {
+  font-size:11px; font-weight:700; margin-top:3px;
+  padding:2px 7px; border-radius:6px; display:inline-block;
+}
+.coin-chg.up { color:var(--green); background:rgba(0,214,143,0.1); }
+.coin-chg.down { color:var(--red); background:rgba(255,77,109,0.1); }
+
+/* ── Portfolio ── */
+.port-hero {
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent2) 100%);
+  border-radius:20px; padding:22px 20px; margin-bottom:14px;
+  position:relative; overflow:hidden;
+}
+.port-hero::after {
+  content:'◈'; position:absolute; right:-12px; top:-18px;
+  font-size:110px; opacity:0.06; color:#fff;
+}
+.ph-label { font-size:10px; font-weight:800; letter-spacing:2px; opacity:0.8; text-transform:uppercase; }
+.ph-total { font-size:36px; font-weight:900; letter-spacing:-1.5px; margin:6px 0 4px; font-family:'DM Mono',monospace; }
+.ph-pnl { font-size:14px; font-weight:700; opacity:0.9; }
+
+.hold-card {
+  background:var(--card); border:1px solid var(--border);
+  border-radius:14px; padding:13px 14px;
+  display:flex; align-items:center; gap:12px; margin-bottom:7px;
+}
+.hold-mid { flex:1; }
+.hold-sym { font-size:15px; font-weight:800; }
+.hold-amt { font-size:11px; color:var(--sub); margin-top:2px; }
+.hold-right { text-align:right; }
+.hold-val { font-family:'DM Mono',monospace; font-size:14px; font-weight:500; }
+.hold-pnl { font-size:12px; font-weight:700; margin-top:2px; }
+.hold-pnl.up { color:var(--green); }
+.hold-pnl.down { color:var(--red); }
+
+/* ── Send ── */
+.send-block {
+  background:var(--card); border:1px solid var(--border);
+  border-radius:18px; padding:18px; margin-bottom:14px;
+}
+.send-block h3 { font-size:16px; font-weight:800; margin-bottom:14px; }
+.send-preview {
+  background:var(--card2); border:1px solid var(--border);
+  border-radius:12px; padding:13px; margin-bottom:12px; font-size:13px;
+}
+.prev-row { display:flex; justify-content:space-between; margin-bottom:6px; }
+.prev-row:last-child { margin-bottom:0; }
+.prev-label { color:var(--sub); }
+.prev-val { font-weight:700; font-family:'DM Mono',monospace; font-size:12px; }
+
+/* ── Alerts ── */
+.alert-card {
+  background:var(--card); border:1px solid var(--border);
+  border-radius:14px; padding:13px 14px;
+  display:flex; align-items:center; gap:11px; margin-bottom:7px;
+}
+.alert-ic {
+  width:36px; height:36px; border-radius:10px;
+  display:flex; align-items:center; justify-content:center; font-size:17px;
+}
+.alert-ic.up { background:rgba(0,214,143,0.12); }
+.alert-ic.down { background:rgba(255,77,109,0.12); }
+.alert-info { flex:1; }
+.alert-title { font-size:14px; font-weight:700; }
+.alert-sub { font-size:11px; color:var(--sub); margin-top:1px; }
+
+/* ── Yields ── */
+.yield-card {
+  background:var(--card); border:1px solid var(--border);
+  border-radius:14px; padding:14px 16px; margin-bottom:8px;
+}
+.yield-top { display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; }
+.yield-name { font-size:14px; font-weight:800; }
+.yield-apy { font-size:16px; font-weight:900; color:var(--green); font-family:'DM Mono',monospace; }
+.yield-desc { font-size:12px; color:var(--sub); }
+.yield-tags { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
+.ytag {
+  font-size:10px; font-weight:700; padding:3px 8px; border-radius:6px;
+  background:var(--card2); color:var(--sub);
+}
+.ytag.low { color:var(--green); background:rgba(0,214,143,0.1); }
+.ytag.med { color:var(--yellow); background:rgba(255,209,102,0.1); }
+.ytag.hi { color:var(--red); background:rgba(255,77,109,0.1); }
+.yield-link {
+  display:inline-block; margin-top:10px; font-size:12px; font-weight:700;
+  color:var(--accent); text-decoration:none;
+}
+
+/* ── Forms ── */
+.fg { margin-bottom:12px; }
+.fg label { font-size:10px; font-weight:800; color:var(--sub); display:block; margin-bottom:6px; text-transform:uppercase; letter-spacing:0.8px; }
+.fg-row { display:flex; gap:8px; }
+.fg-row .fg { flex:1; margin-bottom:0; }
+
+input, select {
+  width:100%; padding:12px 14px;
+  background:var(--card2); border:1px solid var(--border);
+  border-radius:12px; color:var(--text);
+  font-family:'Cabinet Grotesk',sans-serif; font-size:14px; font-weight:600;
+  outline:none; transition:border-color 0.2s; -webkit-appearance:none;
+}
+input:focus, select:focus { border-color:var(--accent); }
+
+.btn {
+  width:100%; padding:14px;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  border:none; border-radius:14px; color:#fff;
+  font-family:'Cabinet Grotesk',sans-serif; font-size:15px; font-weight:800;
+  cursor:pointer; transition:all 0.2s; letter-spacing:-0.3px;
+  box-shadow: 0 4px 20px rgba(79,110,247,0.25); margin-top:4px;
+}
+.btn:active { transform:scale(0.97); opacity:0.9; }
+.btn.ghost { background:var(--card2); border:1px solid var(--border); color:var(--text); box-shadow:none; margin-top:8px; }
+.btn.ton { background: linear-gradient(135deg, var(--ton), #0077bb); box-shadow: 0 4px 20px var(--ton-glow); }
+.btn.red { background:linear-gradient(135deg,#c0392b,#e74c3c); box-shadow:none; }
+
+/* ── Misc ── */
+.loader { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:50px 20px; gap:12px; color:var(--sub); font-size:13px; }
+.spin { width:28px; height:28px; border:3px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:rotating 0.7s linear infinite; }
+@keyframes rotating { to { transform:rotate(360deg); } }
+
+.empty { text-align:center; padding:36px 20px; color:var(--sub); }
+.empty .eico { font-size:42px; margin-bottom:10px; }
+.empty p { font-size:13px; line-height:1.7; }
+.empty code { background:var(--card2); padding:2px 7px; border-radius:6px; font-family:'DM Mono',monospace; font-size:11px; color:var(--accent); }
+
+.divider { height:1px; background:var(--border); margin:16px 0; }
+
+.toast {
+  position:fixed; bottom:88px; left:50%;
+  transform:translateX(-50%) translateY(10px);
+  background:var(--card2); border:1px solid var(--border);
+  border-radius:12px; padding:10px 18px;
+  font-size:13px; font-weight:700; white-space:nowrap;
+  opacity:0; transition:all 0.25s; z-index:999; pointer-events:none;
+}
+.toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+
+/* ── Bottom nav ── */
+.bottom-nav {
+  position:fixed; bottom:0; left:0; right:0;
+  background:rgba(8,8,16,0.96); backdrop-filter:blur(20px);
+  border-top:1px solid var(--border);
+  display:flex; padding:6px 0 22px; z-index:100;
+}
+.bnav-item {
+  flex:1; display:flex; flex-direction:column; align-items:center;
+  gap:2px; cursor:pointer; padding:5px; transition:all 0.15s; color:var(--sub);
+  font-size:9px; font-weight:800; text-transform:uppercase; letter-spacing:0.8px;
+}
+.bnav-ic { font-size:20px; }
+.bnav-item.active { color:var(--accent); }
+.bnav-item:active { transform:scale(0.88); }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">
+    <div class="brand-gem">💎</div>
+    <div class="brand-name">TON <em>Copilot</em></div>
+  </div>
+  <button class="wallet-btn disconnected" id="walletBtn" onclick="handleWalletClick()">💎 Connect Wallet</button>
+</div>
+
+<div class="app-shell" id="appShell">
+
+  <!-- WALLET PAGE -->
+  <div class="page active" id="page-wallet">
+    <div style="height:14px"></div>
+    <div id="notConnected">
+      <div class="connect-prompt">
+        <div class="ico">👛</div>
+        <h3>Connect Your TON Wallet</h3>
+        <p>Link Tonkeeper, TON Space, or any TON wallet to see your real balance, send TON, and view your transaction history.</p>
+        <button class="big-connect-btn" onclick="handleWalletClick()">💎 Connect Wallet</button>
+      </div>
+      <div class="slabel">What you unlock</div>
+      <div class="feature-card"><div class="feature-ic">💰</div><div><div class="feature-title">Live Wallet Balance</div><div class="feature-sub">Real TON balance pulled from the blockchain</div></div></div>
+      <div class="feature-card"><div class="feature-ic">📋</div><div><div class="feature-title">Transaction History</div><div class="feature-sub">All your sends and receives, formatted clearly</div></div></div>
+      <div class="feature-card"><div class="feature-ic">📤</div><div><div class="feature-title">One-tap Send</div><div class="feature-sub">Send TON to any address via Tonkeeper</div></div></div>
+      <div class="feature-card"><div class="feature-ic">📊</div><div><div class="feature-title">Auto Portfolio Sync</div><div class="feature-sub">Your wallet address pre-filled everywhere</div></div></div>
+    </div>
+    <div id="isConnected" style="display:none">
+      <div class="wallet-banner">
+        <div class="wb-label">Connected Wallet</div>
+        <div class="wb-address" id="wbAddr">—</div>
+        <div class="wb-balance" id="wbBal">— TON</div>
+        <div class="wb-usd" id="wbUsd">≈ $—</div>
+        <div class="wb-actions">
+          <button class="wb-btn" onclick="switchTab('send')">📤 Send TON</button>
+          <button class="wb-btn" onclick="refreshWallet()">🔄 Refresh</button>
+          <button class="wb-btn" onclick="loadTxns()">📋 Transactions</button>
+          <button class="wb-btn" onclick="disconnectWallet()">🔌 Disconnect</button>
+        </div>
+      </div>
+      <div class="slabel">Recent Transactions</div>
+      <div id="txnsList"><div class="loader"><div class="spin"></div>Loading...</div></div>
+    </div>
+  </div>
+
+  <!-- MARKET PAGE -->
+  <div class="page" id="page-market">
+    <div style="height:14px"></div>
+    <div class="coin-stats">
+      <div class="cstat"><div class="cstat-val" id="sp-price" style="color:var(--ton)">—</div><div class="cstat-lbl">TON Price</div></div>
+      <div class="cstat"><div class="cstat-val" id="sp-chg">—</div><div class="cstat-lbl">24h Change</div></div>
+      <div class="cstat"><div class="cstat-val" id="sp-mcap">—</div><div class="cstat-lbl">Market Cap</div></div>
+      <div class="cstat"><div class="cstat-val" id="sp-vol">—</div><div class="cstat-lbl">24h Volume</div></div>
+    </div>
+    <div class="slabel">All Markets</div>
+    <div class="coins-grid" id="coinsList"><div class="loader"><div class="spin"></div>Fetching live prices...</div></div>
+  </div>
+
+  <!-- PORTFOLIO PAGE -->
+  <div class="page" id="page-portfolio">
+    <div style="height:14px"></div>
+    <div id="portfolioContent"><div class="loader"><div class="spin"></div>Loading portfolio...</div></div>
+  </div>
+
+  <!-- SEND PAGE -->
+  <div class="page" id="page-send">
+    <div style="height:14px"></div>
+    <div class="send-block">
+      <h3>📤 Send TON</h3>
+      <div class="fg">
+        <label>Recipient Address</label>
+        <input type="text" id="sendAddr" placeholder="EQ... or UQ...">
+      </div>
+      <div class="fg">
+        <label>Amount (TON)</label>
+        <input type="number" id="sendAmt" placeholder="0.00" step="any">
+      </div>
+      <div id="sendPreview" style="display:none" class="send-preview"></div>
+      <button class="btn ton" id="sendBtn" onclick="previewSend()">Preview Send →</button>
+    </div>
+    <div class="send-block">
+      <h3>🔄 Swap Tokens</h3>
+      <p style="font-size:13px;color:var(--sub);margin-bottom:14px">Best DEXes on TON:</p>
+      <a href="https://ston.fi" target="_blank" style="text-decoration:none">
+        <div style="background:var(--card2);border:1px solid var(--border);border-radius:12px;padding:13px 14px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;cursor:pointer">
+          <div><div style="font-size:14px;font-weight:800">STON.fi</div><div style="font-size:11px;color:var(--sub);margin-top:2px">Most popular · Low fees</div></div>
+          <span style="color:var(--accent);font-weight:800">→</span>
+        </div>
+      </a>
+      <a href="https://dedust.io" target="_blank" style="text-decoration:none">
+        <div style="background:var(--card2);border:1px solid var(--border);border-radius:12px;padding:13px 14px;display:flex;align-items:center;justify-content:space-between;cursor:pointer">
+          <div><div style="font-size:14px;font-weight:800">DeDust.io</div><div style="font-size:11px;color:var(--sub);margin-top:2px">Deep liquidity · Large swaps</div></div>
+          <span style="color:var(--accent);font-weight:800">→</span>
+        </div>
+      </a>
+    </div>
+  </div>
+
+  <!-- MORE PAGE: ALERTS + YIELDS + ADD HOLDING -->
+  <div class="page" id="page-more">
+    <div style="height:14px"></div>
+
+    <div class="slabel">Set Price Alert</div>
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:16px;padding:16px;margin-bottom:14px">
+      <div class="fg-row" style="margin-bottom:12px">
+        <div class="fg"><label>Coin</label>
+          <select id="alertCoin">
+            <option>TON</option><option>BTC</option><option>ETH</option><option>SOL</option>
+            <option>NOT</option><option>DOGS</option><option>BNB</option><option>DOGE</option>
+            <option>ADA</option><option>TRX</option>
+          </select>
+        </div>
+        <div class="fg"><label>Direction</label>
+          <select id="alertDir">
+            <option value="above">📈 Above</option>
+            <option value="below">📉 Below</option>
+          </select>
+        </div>
+      </div>
+      <div class="fg"><label>Target Price (USD)</label><input type="number" id="alertPrice" placeholder="e.g. 72000" step="any"></div>
+      <button class="btn" onclick="setAlert()">🔔 Set Alert</button>
+    </div>
+
+    <div class="slabel">Active Alerts</div>
+    <div id="alertsList"></div>
+
+    <div class="divider"></div>
+    <div class="slabel">Add to Portfolio</div>
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:16px;padding:16px;margin-bottom:14px">
+      <div class="fg"><label>Coin</label>
+        <select id="holdCoin">
+          <option>TON</option><option>BTC</option><option>ETH</option><option>SOL</option>
+          <option>NOT</option><option>DOGS</option><option>BNB</option><option>DOGE</option>
+          <option>ADA</option><option>TRX</option><option>USDT</option><option>USDC</option>
+        </select>
+      </div>
+      <div class="fg-row" style="margin-bottom:12px">
+        <div class="fg"><label>Amount</label><input type="number" id="holdAmt" placeholder="100" step="any"></div>
+        <div class="fg"><label>Buy Price ($)</label><input type="number" id="holdBuy" placeholder="1.20" step="any"></div>
+      </div>
+      <button class="btn" onclick="addHolding()">➕ Add Holding</button>
+    </div>
+
+    <div class="divider"></div>
+    <div class="slabel">Best DeFi Yields on TON</div>
+
+    <div class="yield-card">
+      <div class="yield-top"><div class="yield-name">TON Whales Staking</div><div class="yield-apy">~4.5%</div></div>
+      <div class="yield-desc">Liquid staking · Earn tsTON · Non-custodial</div>
+      <div class="yield-tags"><span class="ytag low">🟢 Low Risk</span><span class="ytag">Liquid Staking</span><span class="ytag">Min: 1 TON</span></div>
+      <a class="yield-link" href="https://tonwhales.com/staking" target="_blank">Open TON Whales →</a>
+    </div>
+    <div class="yield-card">
+      <div class="yield-top"><div class="yield-name">Bemo Finance</div><div class="yield-apy">~4.3%</div></div>
+      <div class="yield-desc">Liquid staking · Earn stTON</div>
+      <div class="yield-tags"><span class="ytag low">🟢 Low Risk</span><span class="ytag">Liquid Staking</span></div>
+      <a class="yield-link" href="https://bemo.finance" target="_blank">Open Bemo →</a>
+    </div>
+    <div class="yield-card">
+      <div class="yield-top"><div class="yield-name">STON.fi TON/USDT LP</div><div class="yield-apy">8–15%</div></div>
+      <div class="yield-desc">Provide liquidity · Earn fees + STON rewards</div>
+      <div class="yield-tags"><span class="ytag med">🟡 Medium Risk</span><span class="ytag">LP Farming</span></div>
+      <a class="yield-link" href="https://ston.fi/pools" target="_blank">Open STON.fi →</a>
+    </div>
+    <div class="yield-card">
+      <div class="yield-top"><div class="yield-name">DeDust TON/NOT</div><div class="yield-apy">12–20%</div></div>
+      <div class="yield-desc">High yield LP · Variable APY</div>
+      <div class="yield-tags"><span class="ytag hi">🟠 Higher Risk</span><span class="ytag">LP Farming</span></div>
+      <a class="yield-link" href="https://dedust.io/pools" target="_blank">Open DeDust →</a>
+    </div>
+    <div class="yield-card">
+      <div class="yield-top"><div class="yield-name">Evaa Protocol</div><div class="yield-apy">3–6%</div></div>
+      <div class="yield-desc">Lending · Supply TON to earn interest</div>
+      <div class="yield-tags"><span class="ytag low">🟢 Low Risk</span><span class="ytag">Lending</span></div>
+      <a class="yield-link" href="https://evaa.finance" target="_blank">Open Evaa →</a>
+    </div>
+    <div style="height:20px"></div>
+  </div>
+
+</div>
+
+<div class="bottom-nav">
+  <div class="bnav-item active" id="nav-wallet" onclick="switchTab('wallet')"><div class="bnav-ic">👛</div>Wallet</div>
+  <div class="bnav-item" id="nav-market" onclick="switchTab('market')"><div class="bnav-ic">💹</div>Market</div>
+  <div class="bnav-item" id="nav-portfolio" onclick="switchTab('portfolio')"><div class="bnav-ic">📊</div>Portfolio</div>
+  <div class="bnav-item" id="nav-send" onclick="switchTab('send')"><div class="bnav-ic">📤</div>Send</div>
+  <div class="bnav-item" id="nav-more" onclick="switchTab('more')"><div class="bnav-ic">⚡</div>More</div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const tg = window.Telegram?.WebApp;
+if (tg) { tg.ready(); tg.expand(); tg.setHeaderColor('#080810'); tg.setBackgroundColor('#080810'); }
+
+// ── TON Connect ─────────────────────────────────────────────────────────
+let tonUI = null, walletAddr = null, walletOk = false;
+try {
+  tonUI = new TON_CONNECT_UI.TonConnectUI({
+    manifestUrl: window.location.origin + '/tonconnect-manifest.json',
+    buttonRootId: null
+  });
+  tonUI.onStatusChange(w => {
+    if (w) { walletAddr = w.account.address; walletOk = true; onConnected(); }
+    else { walletAddr = null; walletOk = false; onDisconnected(); }
+  });
+} catch(e) { console.warn('TONConnect init:', e); }
+
+function handleWalletClick() {
+  if (walletOk) { switchTab('wallet'); }
+  else if (tonUI) { tonUI.openModal(); }
+  else { showToast('⚠️ Open in Telegram to connect wallet'); }
+}
+
+async function onConnected() {
+  const short = walletAddr.slice(0,6) + '...' + walletAddr.slice(-4);
+  const btn = document.getElementById('walletBtn');
+  btn.className = 'wallet-btn connected';
+  btn.innerHTML = `<span class="wallet-dot"></span>${short}`;
+  document.getElementById('notConnected').style.display = 'none';
+  document.getElementById('isConnected').style.display = 'block';
+  document.getElementById('wbAddr').textContent = walletAddr.slice(0,12) + '...' + walletAddr.slice(-8);
+  if (tg) tg.HapticFeedback?.notificationOccurred('success');
+  showToast('✅ Wallet connected!');
+  await refreshWallet();
+  await loadTxns();
+}
+
+function onDisconnected() {
+  const btn = document.getElementById('walletBtn');
+  btn.className = 'wallet-btn disconnected';
+  btn.innerHTML = '💎 Connect Wallet';
+  document.getElementById('notConnected').style.display = 'block';
+  document.getElementById('isConnected').style.display = 'none';
+}
+
+function disconnectWallet() {
+  if (tonUI) tonUI.disconnect();
+  showToast('Wallet disconnected');
+}
+
+async function refreshWallet() {
+  if (!walletAddr) return;
+  try {
+    const r = await fetch(`https://toncenter.com/api/v2/getAddressBalance?address=${walletAddr}`);
+    const d = await r.json();
+    if (d.ok) {
+      const bal = parseInt(d.result) / 1e9;
+      document.getElementById('wbBal').textContent = bal.toFixed(4) + ' TON';
+      const coins = coinsCache.length ? coinsCache : await fetchPrices();
+      const ton = coins.find(c => c.symbol === 'TON');
+      if (ton) document.getElementById('wbUsd').textContent = `≈ $${(bal * ton.price).toFixed(2)} USD`;
+    }
+  } catch(e) { console.warn(e); }
+}
+
+async function loadTxns() {
+  if (!walletAddr) return;
+  const el = document.getElementById('txnsList');
+  el.innerHTML = '<div class="loader"><div class="spin"></div>Loading transactions...</div>';
+  try {
+    const r = await fetch(`https://toncenter.com/api/v2/getTransactions?address=${walletAddr}&limit=8`);
+    const d = await r.json();
+    if (!d.ok || !d.result?.length) {
+      el.innerHTML = '<div class="empty"><div class="eico">📭</div><p>No transactions found.</p></div>';
+      return;
+    }
+    el.innerHTML = d.result.map(tx => {
+      const ts = tx.utime ? new Date(tx.utime*1000).toLocaleDateString('en',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '—';
+      const inMsg = tx.in_msg || {};
+      const outMsgs = tx.out_msgs || [];
+      const inVal = parseInt(inMsg.value||0)/1e9;
+      const outVal = outMsgs.reduce((s,m)=>s+parseInt(m.value||0),0)/1e9;
+      const isIn = inVal > 0 && inMsg.source;
+      const hash = tx.transaction_id?.hash || '';
+      return `<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:7px;display:flex;align-items:center;gap:11px">
+        <div style="width:36px;height:36px;border-radius:10px;background:${isIn?'rgba(0,214,143,0.12)':'rgba(255,77,109,0.12)'};display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">${isIn?'📥':'📤'}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:14px;font-weight:700">${isIn?'+'+inVal.toFixed(4):'-'+outVal.toFixed(4)} TON</div>
+          <div style="font-size:11px;color:var(--sub);margin-top:2px">${ts} UTC</div>
+        </div>
+        ${hash?`<a href="https://tonscan.org/tx/${hash}" target="_blank" style="font-size:12px;color:var(--accent);font-weight:700;text-decoration:none;flex-shrink:0">View →</a>`:''}
+      </div>`;
+    }).join('');
+  } catch(e) {
+    el.innerHTML = '<div class="empty"><div class="eico">⚠️</div><p>Failed to load transactions.</p></div>';
+  }
+}
+
+// ── Send ────────────────────────────────────────────────────────────────
+async function previewSend() {
+  const addr = document.getElementById('sendAddr').value.trim();
+  const amt = parseFloat(document.getElementById('sendAmt').value);
+  if (!addr || !amt || amt <= 0) { showToast('⚠️ Enter address and amount'); return; }
+  if (!addr.startsWith('EQ') && !addr.startsWith('UQ')) { showToast('⚠️ Invalid TON address'); return; }
+
+  const coins = coinsCache.length ? coinsCache : await fetchPrices();
+  const ton = coins.find(c => c.symbol === 'TON');
+  const usd = ton ? (amt * ton.price).toFixed(2) : '—';
+  const nanotons = Math.floor(amt * 1e9);
+  const short = addr.slice(0,10)+'...'+addr.slice(-8);
+  const tkLink = `https://app.tonkeeper.com/transfer/${addr}?amount=${nanotons}`;
+
+  const prev = document.getElementById('sendPreview');
+  prev.style.display = 'block';
+  prev.innerHTML = `
+    <div class="prev-row"><span class="prev-label">Amount</span><span class="prev-val">${amt} TON ≈ $${usd}</span></div>
+    <div class="prev-row"><span class="prev-label">To</span><span class="prev-val">${short}</span></div>
+    <div class="prev-row"><span class="prev-label">Network fee</span><span class="prev-val">~0.005 TON</span></div>
+    <div class="prev-row"><span class="prev-label">Wallet</span><span class="prev-val">Tonkeeper</span></div>`;
+
+  const btn = document.getElementById('sendBtn');
+  btn.textContent = '🚀 Open in Tonkeeper';
+  btn.onclick = () => { window.open(tkLink, '_blank'); if(tg) tg.HapticFeedback?.impactOccurred('medium'); };
+}
+
+// ── Market ──────────────────────────────────────────────────────────────
+const META = {
+  TON:{e:'💎',n:'The Open Network'}, BTC:{e:'₿',n:'Bitcoin'}, ETH:{e:'Ξ',n:'Ethereum'},
+  SOL:{e:'◎',n:'Solana'}, NOT:{e:'🪙',n:'Notcoin'}, DOGS:{e:'🐕',n:'Dogs'},
+  BNB:{e:'🔶',n:'BNB Chain'}, DOGE:{e:'🐶',n:'Dogecoin'}, ADA:{e:'🔵',n:'Cardano'},
+  TRX:{e:'⚡',n:'TRON'}, USDT:{e:'💵',n:'Tether'}, USDC:{e:'💵',n:'USD Coin'},
+};
+
+let coinsCache = [];
+
+async function fetchPrices() {
+  try {
+    const r = await fetch(window.location.origin + '/api/prices');
+    const d = await r.json();
+    coinsCache = d.coins || [];
+    return coinsCache;
+  } catch(e) { return coinsCache; }
+}
+
+const fmtP = p => {
+  if (!p) return '$0';
+  if (p>=10000) return '$'+p.toLocaleString('en',{maximumFractionDigits:0});
+  if (p>=1000) return '$'+p.toLocaleString('en',{maximumFractionDigits:2});
+  if (p>=1) return '$'+p.toFixed(4);
+  return '$'+p.toFixed(6);
+};
+const fmtM = m => !m ? '—' : m>=1e9 ? '$'+(m/1e9).toFixed(2)+'B' : '$'+(m/1e6).toFixed(0)+'M';
+const fmtC = c => (c>=0?'+':'')+c.toFixed(2)+'%';
+
+async function renderMarket() {
+  const coins = await fetchPrices();
+  const list = document.getElementById('coinsList');
+  if (!coins.length) { list.innerHTML = '<div class="empty"><div class="eico">⚠️</div><p>Could not load prices.</p></div>'; return; }
+  const ton = coins.find(c => c.symbol==='TON');
+  if (ton) {
+    document.getElementById('sp-price').textContent = fmtP(ton.price);
+    const ce = document.getElementById('sp-chg');
+    ce.textContent = fmtC(ton.change_24h);
+    ce.style.color = ton.change_24h>=0?'var(--green)':'var(--red)';
+    document.getElementById('sp-mcap').textContent = fmtM(ton.market_cap);
+    document.getElementById('sp-vol').textContent = fmtM(ton.volume_24h);
+  }
+  list.innerHTML = coins.map(c => {
+    const m = META[c.symbol] || {e:'🪙',n:c.symbol};
+    const up = c.change_24h >= 0;
+    return `<div class="coin-row ${up?'up':'down'}" onclick="coinClick('${c.symbol}')">
+      <div class="coin-em">${m.e}</div>
+      <div class="coin-mid"><div class="coin-sym">${c.symbol}</div><div class="coin-sub">${m.n}</div></div>
+      <div class="coin-vals">
+        <div class="coin-price">${fmtP(c.price)}</div>
+        <div class="coin-chg ${up?'up':'down'}">${fmtC(c.change_24h)}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function coinClick(sym) {
+  if (tg) tg.HapticFeedback?.impactOccurred('light');
+  document.getElementById('alertCoin').value = sym;
+  switchTab('more');
+  showToast(`Set alert for ${sym} ↓`);
+}
+
+// ── Portfolio ───────────────────────────────────────────────────────────
+let portfolio = JSON.parse(localStorage.getItem('tcp_port') || '{}');
+
+async function renderPortfolio() {
+  const el = document.getElementById('portfolioContent');
+  const keys = Object.keys(portfolio);
+  if (!keys.length) {
+    el.innerHTML = `<div class="empty"><div class="eico">📊</div><p>No holdings yet.<br>Go to <strong>More</strong> tab to add coins.<br>Or use bot: <code>/addholding BTC 0.01 60000</code></p></div>`;
+    return;
+  }
+  const coins = coinsCache.length ? coinsCache : await fetchPrices();
+  const pm = {}; coins.forEach(c => pm[c.symbol]=c.price);
+  let inv=0, cur=0;
+  const rows = keys.map(sym => {
+    const h = portfolio[sym], cp = pm[sym]||0;
+    const i=h.amount*h.buyPrice, c=h.amount*cp, pnl=c-i, pct=i>0?pnl/i*100:0;
+    inv+=i; cur+=c;
+    const up=pnl>=0, m=META[sym]||{e:'🪙'};
+    return `<div class="hold-card">
+      <div class="coin-em">${m.e}</div>
+      <div class="hold-mid"><div class="hold-sym">${sym}</div><div class="hold-amt">${h.amount.toLocaleString()} @ ${fmtP(h.buyPrice)}</div></div>
+      <div class="hold-right">
+        <div class="hold-val">$${c.toFixed(2)}</div>
+        <div class="hold-pnl ${up?'up':'down'}">${up?'+':''}$${pnl.toFixed(2)} (${up?'+':''}${pct.toFixed(1)}%)</div>
+      </div>
+    </div>`;
+  });
+  const tp=cur-inv, tpct=inv>0?tp/inv*100:0, tup=tp>=0;
+  el.innerHTML = `
+    <div class="port-hero">
+      <div class="ph-label">Total Portfolio Value</div>
+      <div class="ph-total">$${cur.toLocaleString('en',{maximumFractionDigits:2})}</div>
+      <div class="ph-pnl">${tup?'📈':'📉'} ${tup?'+':''}$${tp.toFixed(2)} (${tup?'+':''}${tpct.toFixed(1)}%) all time</div>
+    </div>
+    <div class="slabel">Holdings</div>
+    ${rows.join('')}
+    <button class="btn red ghost" onclick="clearPort()" style="margin-top:8px">🗑️ Clear All Holdings</button>
+    <div style="height:10px"></div>`;
+}
+
+function clearPort() {
+  if (confirm('Clear all holdings?')) { portfolio={}; localStorage.setItem('tcp_port',JSON.stringify(portfolio)); renderPortfolio(); showToast('Portfolio cleared'); }
+}
+
+function addHolding() {
+  const sym=document.getElementById('holdCoin').value;
+  const amt=parseFloat(document.getElementById('holdAmt').value);
+  const buy=parseFloat(document.getElementById('holdBuy').value);
+  if (!amt||!buy||amt<=0||buy<=0) { showToast('⚠️ Fill in all fields'); return; }
+  portfolio[sym]={amount:amt, buyPrice:buy};
+  localStorage.setItem('tcp_port',JSON.stringify(portfolio));
+  document.getElementById('holdAmt').value='';
+  document.getElementById('holdBuy').value='';
+  if (tg) tg.HapticFeedback?.notificationOccurred('success');
+  showToast(`✅ ${sym} added to portfolio!`);
+}
+
+// ── Alerts ──────────────────────────────────────────────────────────────
+let alerts = JSON.parse(localStorage.getItem('tcp_alerts')||'[]');
+
+function renderAlerts() {
+  const el = document.getElementById('alertsList');
+  if (!alerts.length) {
+    el.innerHTML='<div class="empty" style="padding:16px 0"><div class="eico" style="font-size:30px">🔔</div><p>No alerts yet.</p></div>';
+    return;
+  }
+  el.innerHTML = alerts.map((a,i) => `
+    <div class="alert-card">
+      <div class="alert-ic ${a.direction==='above'?'up':'down'}">${a.direction==='above'?'📈':'📉'}</div>
+      <div class="alert-info">
+        <div class="alert-title">${a.symbol} ${a.direction} ${fmtP(a.target)}</div>
+        <div class="alert-sub">Also set via bot: /setalert ${a.symbol} ${a.direction} ${a.target}</div>
+      </div>
+      <div onclick="delAlert(${i})" style="cursor:pointer;font-size:18px;color:var(--sub);padding:4px">✕</div>
+    </div>`).join('');
+}
+
+function setAlert() {
+  const sym=document.getElementById('alertCoin').value;
+  const dir=document.getElementById('alertDir').value;
+  const tgt=parseFloat(document.getElementById('alertPrice').value);
+  if (!tgt||tgt<=0) { showToast('⚠️ Enter a valid price'); return; }
+  alerts.push({symbol:sym,direction:dir,target:tgt});
+  localStorage.setItem('tcp_alerts',JSON.stringify(alerts));
+  document.getElementById('alertPrice').value='';
+  if (tg) { tg.HapticFeedback?.notificationOccurred('success'); tg.sendData(JSON.stringify({action:'set_alert',symbol:sym,direction:dir,target:tgt})); }
+  showToast(`✅ ${sym} ${dir} ${fmtP(tgt)} set!`);
+  renderAlerts();
+}
+
+function delAlert(i) { alerts.splice(i,1); localStorage.setItem('tcp_alerts',JSON.stringify(alerts)); renderAlerts(); showToast('Alert removed'); }
+
+// ── Tabs ────────────────────────────────────────────────────────────────
+function switchTab(tab) {
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.bnav-item').forEach(n=>n.classList.remove('active'));
+  document.getElementById(`page-${tab}`).classList.add('active');
+  document.getElementById(`nav-${tab}`).classList.add('active');
+  document.getElementById('appShell').scrollTo(0,0);
+  if (tg) tg.HapticFeedback?.impactOccurred('light');
+  if (tab==='market') renderMarket();
+  if (tab==='portfolio') renderPortfolio();
+  if (tab==='more') renderAlerts();
+}
+
+// ── Toast ────────────────────────────────────────────────────────────────
+function showToast(msg,ms=2500) {
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),ms);
+}
+
+// ── Init ─────────────────────────────────────────────────────────────────
+renderMarket();
+setInterval(renderMarket, 60000);
+</script>
+</body>
+</html>
