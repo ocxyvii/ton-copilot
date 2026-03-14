@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>TON Copilot</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://unpkg.com/@tonconnect/ui@latest/dist/tonconnect-ui.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Cabinet+Grotesk:wght@400;500;700;800;900&display=swap');
@@ -82,7 +83,7 @@ body {
 .wallet-dot { width:7px; height:7px; border-radius:50%; background:var(--green); }
 
 /* ── Pages ── */
-.page { display:none; padding:16px 16px 0; }
+.page { display:none; padding:16px 18px 0; }
 .page.active { display:block; animation: slideUp 0.22s ease; }
 @keyframes slideUp { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
 
@@ -377,6 +378,7 @@ input:focus, select:focus { border-color:var(--accent); }
         <div class="wb-usd" id="wbUsd">≈ $—</div>
         <div class="wb-actions">
           <button class="wb-btn" onclick="switchTab('send')">📤 Send TON</button>
+          <button class="wb-btn" onclick="showReceive()">📥 Receive</button>
           <button class="wb-btn" onclick="refreshWallet()">🔄 Refresh</button>
           <button class="wb-btn" onclick="loadTxns()">📋 Transactions</button>
           <button class="wb-btn" onclick="disconnectWallet()">🔌 Disconnect</button>
@@ -554,6 +556,26 @@ input:focus, select:focus { border-color:var(--accent); }
 
 </div>
 
+<!-- RECEIVE MODAL -->
+<div id="receiveModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:200;align-items:flex-end;justify-content:center">
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:24px 24px 0 0;padding:24px 20px 40px;width:100%;max-width:480px;animation:slideUp 0.25s ease">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
+      <div style="font-size:17px;font-weight:900">📥 Receive TON</div>
+      <div onclick="closeReceive()" style="cursor:pointer;font-size:22px;color:var(--sub)">✕</div>
+    </div>
+    <div style="text-align:center;margin-bottom:16px">
+      <div id="qrcode" style="background:#fff;padding:12px;border-radius:14px;display:inline-block"></div>
+    </div>
+    <div style="background:var(--card2);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:14px">
+      <div style="font-size:10px;font-weight:800;color:var(--sub);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Your Wallet Address</div>
+      <div id="receiveAddr" style="font-family:'DM Mono',monospace;font-size:12px;color:var(--text);word-break:break-all;line-height:1.6"></div>
+    </div>
+    <button onclick="copyAddress()" class="btn" style="margin-top:0">📋 Copy Address</button>
+    <div style="font-size:12px;color:var(--sub);text-align:center;margin-top:12px">Only send TON and TON-based tokens to this address</div>
+  </div>
+</div>
+
+
 <div class="bottom-nav">
   <div class="bnav-item active" id="nav-wallet" onclick="switchTab('wallet')"><div class="bnav-ic">👛</div>Wallet</div>
   <div class="bnav-item" id="nav-market" onclick="switchTab('market')"><div class="bnav-ic">💹</div>Market</div>
@@ -702,11 +724,20 @@ let coinsCache = [];
 
 async function fetchPrices() {
   try {
-    const r = await fetch(window.location.origin + '/api/prices');
+    const r = await fetch(window.location.origin + '/api/prices?t=' + Date.now());
+    if (r.status === 429) {
+      console.warn('Rate limited, using cache');
+      return coinsCache;
+    }
     const d = await r.json();
-    coinsCache = d.coins || [];
+    if (d.coins && d.coins.length > 0) {
+      coinsCache = d.coins;
+    }
     return coinsCache;
-  } catch(e) { return coinsCache; }
+  } catch(e) {
+    console.warn('fetchPrices error:', e);
+    return coinsCache;
+  }
 }
 
 const fmtP = p => {
@@ -722,7 +753,15 @@ const fmtC = c => (c>=0?'+':'')+c.toFixed(2)+'%';
 async function renderMarket() {
   const coins = await fetchPrices();
   const list = document.getElementById('coinsList');
-  if (!coins.length) { list.innerHTML = '<div class="empty"><div class="eico">⚠️</div><p>Could not load prices.</p></div>'; return; }
+  if (!coins.length) {
+    list.innerHTML = `<div class="empty">
+      <div class="eico">⚠️</div>
+      <p>Could not load prices.<br><small style="color:var(--sub)">CoinGecko rate limit — retrying...</small></p>
+      <button onclick="renderMarket()" style="margin-top:12px;padding:10px 20px;background:var(--accent);border:none;border-radius:10px;color:#fff;font-family:'Cabinet Grotesk',sans-serif;font-weight:700;font-size:13px;cursor:pointer">🔄 Retry Now</button>
+    </div>`;
+    setTimeout(renderMarket, 15000);
+    return;
+  }
   const ton = coins.find(c => c.symbol==='TON');
   if (ton) {
     document.getElementById('sp-price').textContent = fmtP(ton.price);
@@ -844,6 +883,50 @@ function setAlert() {
 }
 
 function delAlert(i) { alerts.splice(i,1); localStorage.setItem('tcp_alerts',JSON.stringify(alerts)); renderAlerts(); showToast('Alert removed'); }
+
+
+// ── Receive ─────────────────────────────────────────────────────────────
+let qrInstance = null;
+
+function showReceive() {
+  if (!walletAddr) { showToast('⚠️ Connect wallet first'); return; }
+  const modal = document.getElementById('receiveModal');
+  modal.style.display = 'flex';
+  document.getElementById('receiveAddr').textContent = walletAddr;
+  // Generate QR code
+  const qrEl = document.getElementById('qrcode');
+  qrEl.innerHTML = '';
+  try {
+    new QRCode(qrEl, {
+      text: walletAddr,
+      width: 200, height: 200,
+      colorDark: '#000000', colorLight: '#ffffff',
+      correctLevel: QRCode.CorrectLevel.M
+    });
+  } catch(e) { qrEl.innerHTML = '<div style="padding:20px;color:#333;font-size:12px">QR unavailable</div>'; }
+  if (tg) tg.HapticFeedback?.impactOccurred('light');
+}
+
+function closeReceive() {
+  document.getElementById('receiveModal').style.display = 'none';
+}
+
+function copyAddress() {
+  if (!walletAddr) return;
+  navigator.clipboard.writeText(walletAddr).then(() => {
+    showToast('✅ Address copied!');
+    if (tg) tg.HapticFeedback?.notificationOccurred('success');
+  }).catch(() => {
+    // Fallback
+    const el = document.createElement('textarea');
+    el.value = walletAddr;
+    document.body.appendChild(el);
+    el.select();
+    document.execCommand('copy');
+    document.body.removeChild(el);
+    showToast('✅ Address copied!');
+  });
+}
 
 // ── Tabs ────────────────────────────────────────────────────────────────
 function switchTab(tab) {

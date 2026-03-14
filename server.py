@@ -9,29 +9,30 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-COINGECKO_API = "https://api.coingecko.com/api/v3"
-
+# CoinCap asset IDs (free, no key needed)
 SUPPORTED_COINS = {
-    "TON":  "the-open-network",
-    "NOT":  "notcoin",
-    "DOGS": "dogs-2",
     "BTC":  "bitcoin",
     "ETH":  "ethereum",
     "SOL":  "solana",
-    "BNB":  "binancecoin",
-    "USDT": "tether",
-    "USDC": "usd-coin",
+    "BNB":  "binance-coin",
     "DOGE": "dogecoin",
     "ADA":  "cardano",
     "TRX":  "tron",
+    "TON":  "the-open-network",
+    "NOT":  "notcoin",
+    "DOGS": "dogs",
+    "USDT": "tether",
+    "USDC": "usd-coin",
 }
+
+COINCAP_API = "https://api.coincap.io/v2"
 
 def make_connector():
     ssl_context = ssl.create_default_context(cafile=certifi.where())
     return aiohttp.TCPConnector(ssl=ssl_context)
 
-# Cache prices for 60 seconds to avoid rate limits
-_price_cache = {"data": {}, "ts": 0}
+# Cache prices for 60 seconds
+_price_cache = {"data": [], "ts": 0}
 
 async def fetch_prices():
     import time
@@ -41,43 +42,47 @@ async def fetch_prices():
     try:
         ids = ",".join(SUPPORTED_COINS.values())
         connector = make_connector()
-        headers = {"User-Agent": "TONCopilot/1.0"}
+        headers = {"User-Agent": "TONCopilot/1.0", "Accept-Encoding": "gzip, deflate"}
         async with aiohttp.ClientSession(headers=headers, connector=connector) as session:
-            params = {
-                "ids": ids,
-                "vs_currencies": "usd",
-                "include_24hr_change": "true",
-                "include_market_cap": "true",
-                "include_24hr_vol": "true",
-            }
-            async with session.get(f"{COINGECKO_API}/simple/price", params=params,
-                                   timeout=aiohttp.ClientTimeout(total=15)) as resp:
+            async with session.get(
+                f"{COINCAP_API}/assets",
+                params={"ids": ids, "limit": 20},
+                timeout=aiohttp.ClientTimeout(total=15)
+            ) as resp:
                 if resp.status == 200:
                     data = await resp.json()
-                    _price_cache["data"] = data
+                    assets = data.get("data", [])
+                    _price_cache["data"] = assets
                     _price_cache["ts"] = now
-                    return data
+                    return assets
                 else:
-                    print(f"CoinGecko status: {resp.status}")
+                    print(f"CoinCap status: {resp.status}")
                     return _price_cache["data"]
     except Exception as e:
         print(f"Error fetching prices: {e}")
         return _price_cache["data"]
 
+# CoinCap ID -> symbol lookup
+COINCAP_TO_SYMBOL = {v: k for k, v in SUPPORTED_COINS.items()}
+
 async def prices_handler(request):
-    data = await fetch_prices()
-    id_to_symbol = {v: k for k, v in SUPPORTED_COINS.items()}
+    assets = await fetch_prices()
+    order = ["BTC", "ETH", "SOL", "BNB", "TON", "NOT", "DOGS", "DOGE", "ADA", "TRX", "USDT", "USDC"]
+    # Build lookup by coincap id
+    asset_map = {a["id"]: a for a in assets}
     result = []
-    order = ["TON", "NOT", "DOGS", "BTC", "ETH", "SOL", "BNB", "DOGE", "ADA", "TRX", "USDT", "USDC"]
     for symbol in order:
-        cg_id = SUPPORTED_COINS.get(symbol)
-        if not cg_id or cg_id not in data:
+        cap_id = SUPPORTED_COINS.get(symbol)
+        asset = asset_map.get(cap_id)
+        if not asset:
             continue
-        coin = data[cg_id]
-        price = coin.get("usd", 0)
-        change = coin.get("usd_24h_change", 0)
-        mcap = coin.get("usd_market_cap", 0)
-        vol = coin.get("usd_24h_vol", 0)
+        try:
+            price = float(asset.get("priceUsd") or 0)
+            change = float(asset.get("changePercent24Hr") or 0)
+            mcap = float(asset.get("marketCapUsd") or 0)
+            vol = float(asset.get("volumeUsd24Hr") or 0)
+        except (ValueError, TypeError):
+            continue
         result.append({
             "symbol": symbol,
             "price": price,
@@ -85,6 +90,8 @@ async def prices_handler(request):
             "market_cap": mcap,
             "volume_24h": vol,
         })
+    if not result:
+        return web.json_response({"coins": [], "status": "error", "message": "Could not fetch prices"}, status=503)
     return web.json_response({"coins": result, "status": "ok"})
 
 async def health_handler(request):
