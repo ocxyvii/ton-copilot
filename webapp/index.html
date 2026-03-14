@@ -722,22 +722,60 @@ const META = {
 
 let coinsCache = [];
 
+// Fetch prices directly from multiple sources with fallback
+const BINANCE_PAIRS = [
+  ["BTC","BTCUSDT"],["ETH","ETHUSDT"],["SOL","SOLUSDT"],
+  ["BNB","BNBUSDT"],["DOGE","DOGEUSDT"],["ADA","ADAUSDT"],
+  ["TRX","TRXUSDT"],["TON","TONUSDT"],["NOT","NOTUSDT"]
+];
+
 async function fetchPrices() {
+  // Try our server first
   try {
-    const r = await fetch(window.location.origin + '/api/prices?t=' + Date.now());
-    if (r.status === 429) {
-      console.warn('Rate limited, using cache');
-      return coinsCache;
+    const r = await fetch(window.location.origin + '/api/prices?t=' + Date.now(), {
+      signal: AbortSignal.timeout(5000)
+    });
+    if (r.ok) {
+      const d = await r.json();
+      if (d.coins && d.coins.length > 0) {
+        coinsCache = d.coins;
+        return coinsCache;
+      }
     }
-    const d = await r.json();
-    if (d.coins && d.coins.length > 0) {
-      coinsCache = d.coins;
+  } catch(e) { console.warn('Server prices failed, trying Binance...'); }
+
+  // Fallback: fetch directly from Binance
+  try {
+    const symbols = BINANCE_PAIRS.map(p => '"' + p[1] + '"').join(',');
+    const r = await fetch(
+      `https://api.binance.com/api/v3/ticker/24hr?symbols=[${symbols}]`,
+      { signal: AbortSignal.timeout(8000) }
+    );
+    if (r.ok) {
+      const tickers = await r.json();
+      const result = [];
+      for (const [sym, pair] of BINANCE_PAIRS) {
+        const t = tickers.find(x => x.symbol === pair);
+        if (!t) continue;
+        result.push({
+          symbol: sym,
+          price: parseFloat(t.lastPrice),
+          change_24h: parseFloat(t.priceChangePercent),
+          market_cap: 0,
+          volume_24h: parseFloat(t.quoteVolume),
+        });
+      }
+      // Add stablecoins
+      result.push({ symbol: "USDT", price: 1.0, change_24h: 0, market_cap: 0, volume_24h: 0 });
+      result.push({ symbol: "USDC", price: 1.0, change_24h: 0, market_cap: 0, volume_24h: 0 });
+      if (result.length > 0) {
+        coinsCache = result;
+        return coinsCache;
+      }
     }
-    return coinsCache;
-  } catch(e) {
-    console.warn('fetchPrices error:', e);
-    return coinsCache;
-  }
+  } catch(e) { console.warn('Binance also failed:', e); }
+
+  return coinsCache;
 }
 
 const fmtP = p => {
@@ -756,7 +794,7 @@ async function renderMarket() {
   if (!coins.length) {
     list.innerHTML = `<div class="empty">
       <div class="eico">⚠️</div>
-      <p>Could not load prices.<br><small style="color:var(--sub)">CoinGecko rate limit — retrying...</small></p>
+      <p>Could not load prices.<br><small style="color:var(--sub)">Fetching prices... please wait</small></p>
       <button onclick="renderMarket()" style="margin-top:12px;padding:10px 20px;background:var(--accent);border:none;border-radius:10px;color:#fff;font-family:'Cabinet Grotesk',sans-serif;font-weight:700;font-size:13px;cursor:pointer">🔄 Retry Now</button>
     </div>`;
     setTimeout(renderMarket, 15000);
