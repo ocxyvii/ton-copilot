@@ -591,6 +591,27 @@ input:focus, select:focus { border-color:var(--accent); }
 const tg = window.Telegram?.WebApp;
 if (tg) { tg.ready(); tg.expand(); tg.setHeaderColor('#080810'); tg.setBackgroundColor('#080810'); }
 
+
+// ── TON Address helpers ──────────────────────────────────────────────────
+// Convert raw 0:hex address to friendly EQ... format for display
+function formatTonAddress(addr) {
+  if (!addr) return '';
+  // Already friendly format
+  if (addr.startsWith('EQ') || addr.startsWith('UQ')) return addr;
+  // Raw hex — show shortened for display, keep raw for API calls
+  if (addr.includes(':')) {
+    const hex = addr.split(':')[1] || '';
+    return hex.slice(0,6) + '...' + hex.slice(-6);
+  }
+  return addr.slice(0,8) + '...' + addr.slice(-6);
+}
+
+function shortAddr(addr) {
+  if (!addr) return '';
+  if (addr.length > 12) return addr.slice(0,8) + '...' + addr.slice(-6);
+  return addr;
+}
+
 // ── TON Connect ─────────────────────────────────────────────────────────
 let tonUI = null, walletAddr = null, walletOk = false;
 try {
@@ -614,10 +635,11 @@ async function onConnected() {
   const short = walletAddr.slice(0,6) + '...' + walletAddr.slice(-4);
   const btn = document.getElementById('walletBtn');
   btn.className = 'wallet-btn connected';
-  btn.innerHTML = `<span class="wallet-dot"></span>${short}`;
+  const displayAddr = walletAddr.startsWith('EQ') || walletAddr.startsWith('UQ') ? walletAddr.slice(0,6)+'...'+walletAddr.slice(-4) : walletAddr.slice(0,8)+'...'+walletAddr.slice(-4);
+  btn.innerHTML = `<span class="wallet-dot"></span>${displayAddr}`;
   document.getElementById('notConnected').style.display = 'none';
   document.getElementById('isConnected').style.display = 'block';
-  document.getElementById('wbAddr').textContent = walletAddr.slice(0,12) + '...' + walletAddr.slice(-8);
+  document.getElementById('wbAddr').textContent = walletAddr.startsWith('EQ') || walletAddr.startsWith('UQ') ? walletAddr.slice(0,10)+'...'+walletAddr.slice(-6) : walletAddr;
   if (tg) tg.HapticFeedback?.notificationOccurred('success');
   showToast('✅ Wallet connected!');
   await refreshWallet();

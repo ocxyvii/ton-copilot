@@ -40,6 +40,29 @@ SUPPORTED_COINS = {
     "TRX":   "tron",
 }
 
+
+def is_valid_ton_address(address: str) -> bool:
+    """Accept EQ/UQ friendly format OR raw hex (0:xxxx) format"""
+    if not address:
+        return False
+    # Friendly bounceable/non-bounceable format
+    if (address.startswith("EQ") or address.startswith("UQ")) and len(address) >= 40:
+        return True
+    # Raw hex format: 0:f986f60c...  (workchain:hex)
+    if ":" in address:
+        parts = address.split(":", 1)
+        if len(parts) == 2 and len(parts[1]) == 64:
+            try:
+                int(parts[1], 16)  # validate hex
+                return True
+            except ValueError:
+                pass
+    return False
+
+def normalize_ton_address(address: str) -> str:
+    """Return address as-is — TON API accepts both formats"""
+    return address.strip()
+
 SYSTEM_PROMPT = """You are TON Copilot, an AI financial assistant on the TON blockchain inside Telegram.
 You help users with prices, wallet balances, transaction history, portfolio tracking, DeFi yields, and price alerts.
 You support TON, NOT, DOGS, BTC, ETH, SOL, BNB, USDT, USDC, DOGE, ADA, TRX and more.
@@ -353,7 +376,7 @@ async def action_get_price(update, context, token=None):
 
 
 async def action_get_balance(update, context, address):
-    if not address or not ((address.startswith("EQ") or address.startswith("UQ")) and len(address) >= 40):
+    if not address or not is_valid_ton_address(address):
         saved = context.user_data.get("saved_wallet")
         if saved:
             address = saved
@@ -387,7 +410,7 @@ async def action_get_balance(update, context, address):
 
 
 async def action_get_transactions(update, context, address):
-    if not address or not ((address.startswith("EQ") or address.startswith("UQ")) and len(address) >= 40):
+    if not address or not is_valid_ton_address(address):
         saved = context.user_data.get("saved_wallet")
         if saved:
             address = saved
@@ -439,7 +462,7 @@ async def action_convert(update, context, amount, token=None):
 
 
 async def action_send_ton(update, context, address, amount):
-    if not address or not ((address.startswith("EQ") or address.startswith("UQ")) and len(address) >= 40):
+    if not address or not is_valid_ton_address(address):
         await update.message.reply_text(
             "📤 I need a destination address!\nTry: _\"send 5 TON to EQD4FP...\"_",
             parse_mode="Markdown"
@@ -729,8 +752,8 @@ async def savewallet_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text("💾 Usage: `/savewallet <your_wallet_address>`", parse_mode="Markdown")
         return
     address = args[0].strip()
-    if not (address.startswith("EQ") or address.startswith("UQ")) or len(address) < 40:
-        await update.message.reply_text("⚠️ Invalid TON address. Must start with `EQ` or `UQ`.", parse_mode="Markdown")
+    if not is_valid_ton_address(address):
+        await update.message.reply_text("⚠️ Invalid TON address. Send an address starting with EQ, UQ, or raw format (0:xxxx...)", parse_mode="Markdown")
         return
     context.user_data["saved_wallet"] = address
     short = f"{address[:6]}...{address[-4:]}"
@@ -765,7 +788,7 @@ async def history_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("📋 Usage: `/history <wallet_address>`", parse_mode="Markdown")
         return
     address = args[0].strip()
-    if not (address.startswith("EQ") or address.startswith("UQ")) or len(address) < 40:
+    if not is_valid_ton_address(address):
         await update.message.reply_text("⚠️ Invalid TON address.", parse_mode="Markdown")
         return
     await update.message.reply_text("🔍 Fetching transactions...")
